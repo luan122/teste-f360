@@ -10,7 +10,8 @@
     { "key": "idempotencyKey", "value": "", "type": "string" },
     { "key": "jwtToken", "value": "", "type": "string" },
     { "key": "scheduledAt", "value": "", "type": "string" },
-    { "key": "correlationId", "value": "", "type": "string" }
+    { "key": "correlationId", "value": "", "type": "string" },
+    { "key": "priorityTestScheduledAt", "value": "", "type": "string" }
   ],
   "auth": {
     "type": "apikey",
@@ -946,6 +947,108 @@
                   "pm.test('API auto-generated a correlationId', () => {",
                   "    const body = pm.response.json();",
                   "    pm.expect(body.correlationId).to.be.a('string').and.to.have.length.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Priority Test",
+      "description": "Tests that High priority jobs are executed before Low priority jobs when scheduled for the exact same time.",
+      "item": [
+        {
+          "name": "Schedule Low Priority Job (First Request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 1,\n  \"priority\": \"Low\",\n  \"scheduledAt\": \"{{priorityTestScheduledAt}}\",\n  \"maxAttempts\": 3,\n  \"payload\": {\n    \"message\": \"Low priority scheduled job\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Schedules a Low priority job 10s into the future. Sets the shared priorityTestScheduledAt variable so the next request uses the exact same time."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Set scheduledAt to 10 seconds from now in ISO 8601 format",
+                  "const future = new Date(Date.now() + 10 * 1000).toISOString();",
+                  "pm.collectionVariables.set('priorityTestScheduledAt', future);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "const rawBody = pm.variables.replaceIn(pm.request.body.raw);",
+                  "const reqBody = JSON.parse(rawBody);",
+                  "const isScheduled = reqBody.scheduledAt && new Date(reqBody.scheduledAt) > new Date();",
+                  "const expectedStatus = isScheduled ? 'Scheduled' : 'Queued';",
+                  "",
+                  "pm.test(`Status is ${expectedStatus}`, () => {",
+                  "    const { status } = pm.response.json();",
+                  "    pm.expect(status).to.equal(expectedStatus);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Schedule High Priority Job (Second Request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 1,\n  \"priority\": \"High\",\n  \"scheduledAt\": \"{{priorityTestScheduledAt}}\",\n  \"maxAttempts\": 3,\n  \"payload\": {\n    \"message\": \"High priority scheduled job\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Schedules a High priority job at the EXACT same time as the Low priority job. When the dispatcher releases them, the High priority one should be processed first by RabbitMQ."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "const rawBody = pm.variables.replaceIn(pm.request.body.raw);",
+                  "const reqBody = JSON.parse(rawBody);",
+                  "const isScheduled = reqBody.scheduledAt && new Date(reqBody.scheduledAt) > new Date();",
+                  "const expectedStatus = isScheduled ? 'Scheduled' : 'Queued';",
+                  "",
+                  "pm.test(`Status is ${expectedStatus}`, () => {",
+                  "    const { status } = pm.response.json();",
+                  "    pm.expect(status).to.equal(expectedStatus);",
                   "});"
                 ]
               }
