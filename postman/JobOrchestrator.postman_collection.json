@@ -1,0 +1,956 @@
+{
+  "info": {
+    "name": "Job Orchestrator API",
+    "_postman_id": "job-orchestrator-v1",
+    "description": "Automated tests for the Distributed Job Orchestrator API.\n\n## Setup\n1. Import this collection and the `JobOrchestrator.local.postman_environment.json` environment.\n2. Start the local stack: `docker compose up -d`\n3. Run the collection via Collection Runner (in order) or Newman:\n   ```\n   npx newman run JobOrchestrator.postman_collection.json -e JobOrchestrator.local.postman_environment.json\n   ```\n\n## Auth\nAll `/jobs` endpoints require either:\n- **API Key**: `X-Api-Key` header (default, pre-configured)\n- **JWT Bearer**: See the `Auth / JWT Bearer` request for a working example\n\n## Execution order\nRun folders top-to-bottom. The Happy Path folder auto-captures `jobId` and `idempotencyKey` into collection variables used by subsequent requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "jobId", "value": "", "type": "string" },
+    { "key": "idempotencyKey", "value": "", "type": "string" },
+    { "key": "jwtToken", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "X-Api-Key" },
+      { "key": "value", "value": "{{apiKey}}" },
+      { "key": "in", "value": "header" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "description": "Liveness and readiness probes. No authentication required.",
+      "item": [
+        {
+          "name": "Liveness — GET /health/live",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/live",
+              "host": ["{{baseUrl}}"],
+              "path": ["health", "live"]
+            },
+            "description": "Quick liveness check — confirms the process is running. Should always return 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 Healthy', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response time < 500ms', () => {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness — GET /health/ready",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["health", "ready"]
+            },
+            "description": "Readiness check — confirms MongoDB and RabbitMQ dependencies are reachable. Returns 200 when all healthy, 503 when degraded."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 Ready', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response body indicates healthy status', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal('Healthy');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Happy Path",
+      "description": "Core CRUD flow. Run these in order — Create Job auto-saves `jobId` and `idempotencyKey` for downstream requests.",
+      "item": [
+        {
+          "name": "Create Job (Low priority, immediate) — POST /jobs → 202",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"maxAttempts\": 5,\n  \"payload\": {\n    \"to\": \"user@example.com\",\n    \"subject\": \"Hello from Job Orchestrator\",\n    \"body\": \"This is a test email job.\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Creates an immediate job (no scheduledAt). The response jobId and idempotencyKey are saved as collection variables for use by subsequent requests."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate a fresh idempotency key for this run",
+                  "const key = pm.variables.replaceIn('{{$guid}}');",
+                  "pm.collectionVariables.set('idempotencyKey', key);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('Response has jobId, status, correlationId', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('jobId');",
+                  "    pm.expect(body).to.have.property('status');",
+                  "    pm.expect(body).to.have.property('correlationId');",
+                  "});",
+                  "",
+                  "pm.test('jobId is a valid UUID', () => {",
+                  "    const { jobId } = pm.response.json();",
+                  "    pm.expect(jobId).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);",
+                  "});",
+                  "",
+                  "const rawBody = pm.variables.replaceIn(pm.request.body.raw);",
+                  "const reqBody = JSON.parse(rawBody);",
+                  "const isScheduled = reqBody.scheduledAt && new Date(reqBody.scheduledAt) > new Date();",
+                  "const expectedStatus = isScheduled ? 'Scheduled' : 'Queued';",
+                  "",
+                  "pm.test(`Status is ${expectedStatus}`, () => {",
+                  "    const { status } = pm.response.json();",
+                  "    pm.expect(status).to.equal(expectedStatus);",
+                  "});",
+                  "",
+                  "// Save jobId for downstream requests",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('jobId', body.jobId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Job (High priority) — POST /jobs → 202",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 1,\n  \"priority\": \"High\",\n  \"maxAttempts\": 3,\n  \"payload\": {\n    \"orderId\": \"ORD-12345\",\n    \"amount\": 99.99,\n    \"currency\": \"USD\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Creates a High priority job. High priority jobs are dispatched before Low priority ones."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "const rawBody = pm.variables.replaceIn(pm.request.body.raw);",
+                  "const reqBody = JSON.parse(rawBody);",
+                  "const isScheduled = reqBody.scheduledAt && new Date(reqBody.scheduledAt) > new Date();",
+                  "const expectedStatus = isScheduled ? 'Scheduled' : 'Queued';",
+                  "",
+                  "pm.test(`Job created with ${expectedStatus} status`, () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal(expectedStatus);",
+                  "    pm.expect(body.jobId).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Job (Scheduled, future timestamp) — POST /jobs → 202",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 1,\n  \"priority\": \"Low\",\n  \"scheduledAt\": \"{{scheduledAt}}\",\n  \"maxAttempts\": 2,\n  \"payload\": {\n    \"reportType\": \"monthly-summary\",\n    \"recipientEmail\": \"manager@example.com\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Creates a job scheduled for 1 hour in the future. The status should be `Scheduled` (not `Pending`) because it has a future `scheduledAt`."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Set scheduledAt to 1 hour from now in ISO 8601 format",
+                  "const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();",
+                  "pm.variables.set('scheduledAt', future);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "const rawBody = pm.variables.replaceIn(pm.request.body.raw);",
+                  "const reqBody = JSON.parse(rawBody);",
+                  "const isScheduled = reqBody.scheduledAt && new Date(reqBody.scheduledAt) > new Date();",
+                  "const expectedStatus = isScheduled ? 'Scheduled' : 'Queued';",
+                  "",
+                  "pm.test(`Job has status ${expectedStatus}`, () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal(expectedStatus);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Job Status — GET /jobs/:jobId → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "{{jobId}}"]
+            },
+            "description": "Fetches the current status of the job created by 'Create Job (Low priority)'. Requires `jobId` collection variable (auto-set by that request)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains all expected fields', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.all.keys(",
+                  "        'jobId', 'type', 'priority', 'status',",
+                  "        'attempts', 'maxAttempts', 'correlationId',",
+                  "        'createdAt', 'updatedAt'",
+                  "    );",
+                  "});",
+                  "",
+                  "pm.test('jobId matches requested ID', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.jobId).to.equal(pm.collectionVariables.get('jobId'));",
+                  "});",
+                  "",
+                  "pm.test('status is a valid JobStatus value', () => {",
+                  "    const validStatuses = ['Pending','Scheduled','Queued','Processing','Completed','Failed','Cancelled','DeadLettered'];",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(validStatuses).to.include(body.status);",
+                  "});",
+                  "",
+                  "pm.test('priority is Low or High', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(['Low', 'High']).to.include(body.priority);",
+                  "});",
+                  "",
+                  "pm.test('attempts is a non-negative integer', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.attempts).to.be.a('number').and.to.be.at.least(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel Job — POST /jobs/:jobId/cancel → 202",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/{{jobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "{{jobId}}", "cancel"]
+            },
+            "description": "Requests cooperative cancellation of the job created in the first Happy Path request. The job must be in Pending, Scheduled, or Queued state."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Idempotency",
+      "description": "Tests the idempotency guarantee: same key + same body is safe to retry; same key + different body returns 409.",
+      "item": [
+        {
+          "name": "Step 1: Create Job (capture idempotency key) — 202",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"payload\": { \"seed\": \"alpha\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Creates a job and saves the idempotency key. Run before the two Idempotency requests below."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const key = pm.variables.replaceIn('{{$guid}}');",
+                  "pm.collectionVariables.set('idempotencyKey', key);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('idempotencyJobId', body.jobId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Step 2: Retry same key + same body → 202 (idempotent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"payload\": { \"seed\": \"alpha\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Retries the exact same request. Must return 202 with the same jobId (no new job created)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted (idempotent replay)', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('Returns the same jobId as original request', () => {",
+                  "    const body = pm.response.json();",
+                  "    const original = pm.collectionVariables.get('idempotencyJobId');",
+                  "    pm.expect(body.jobId).to.equal(original);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Step 3: Retry same key + different body → 409 Conflict",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"payload\": { \"seed\": \"DIFFERENT-BODY\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Reuses the same Idempotency-Key but with a different payload. Must return 409 Conflict to signal the key is already claimed by a different request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 Conflict (key reuse with different body)', () => {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Validation (400s)",
+      "description": "Verifies that the API correctly rejects malformed or incomplete requests.",
+      "item": [
+        {
+          "name": "Missing Idempotency-Key header → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Omits the required `Idempotency-Key` header. The API must return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing required 'type' field → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priority\": \"Low\",\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Omits the required `type` field. FluentValidation should reject with 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid priority value → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"URGENT\",\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Sends `priority: \"URGENT\"` which is not a valid enum value. Valid values are `\"Low\"` and `\"High\"`. Must return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "scheduledAt in the past → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"scheduledAt\": \"2000-01-01T00:00:00Z\",\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Sends a `scheduledAt` timestamp in the past (year 2000). The validator requires it to be a future date. Must return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "maxAttempts out of range (0) → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"maxAttempts\": 0,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Sends `maxAttempts: 0`, which is below the minimum of 1. Valid range is [1, 100]. Must return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "maxAttempts out of range (101) → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"maxAttempts\": 101,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Sends `maxAttempts: 101`, which exceeds the maximum of 100. Must return 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Not Found (404s)",
+      "description": "Verifies that requests referencing non-existent job IDs return 404.",
+      "item": [
+        {
+          "name": "Get non-existent job → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Requests a job with a nil UUID (guaranteed to not exist). Must return 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404 Not Found', () => {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel non-existent job → 404",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/00000000-0000-0000-0000-000000000000/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "00000000-0000-0000-0000-000000000000", "cancel"]
+            },
+            "description": "Attempts to cancel a job with a nil UUID (guaranteed to not exist). Must return 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404 Not Found', () => {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Auth",
+      "description": "Tests authentication and authorization enforcement.",
+      "item": [
+        {
+          "name": "No credentials → 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Sends a request with no `X-Api-Key` and no `Authorization` header. Must return 401."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401 Unauthorized', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid API key → 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [
+              { "key": "X-Api-Key", "value": "wrong-api-key-that-does-not-exist" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jobs/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "Sends an invalid API key. Must return 401."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401 Unauthorized', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "JWT Bearer auth (alternative to API key) → 202",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"payload\": { \"note\": \"Created via JWT bearer token\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Creates a job using JWT Bearer authentication instead of API key. The pre-request script builds a HS256 JWT signed with `jwtSigningKey` from the environment.\n\n**Required environment variables:** `jwtSigningKey`, `jwtIssuer`, `jwtAudience`."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Build a HS256 JWT using CryptoJS (available in Postman sandbox)",
+                  "const signingKey = pm.environment.get('jwtSigningKey') || pm.collectionVariables.get('jwtSigningKey') || 'local-dev-signing-key-change-me-please-32b';",
+                  "const issuer    = pm.environment.get('jwtIssuer')     || 'job-orchestrator';",
+                  "const audience  = pm.environment.get('jwtAudience')   || 'job-orchestrator-clients';",
+                  "",
+                  "function base64UrlEncode(str) {",
+                  "    return CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(str))",
+                  "        .replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "",
+                  "function base64UrlEncodeBytes(wordArray) {",
+                  "    return CryptoJS.enc.Base64.stringify(wordArray)",
+                  "        .replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "",
+                  "const nowSec = Math.floor(Date.now() / 1000);",
+                  "const header  = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));",
+                  "const payload = base64UrlEncode(JSON.stringify({",
+                  "    iss: issuer,",
+                  "    aud: audience,",
+                  "    sub: 'postman-test-client',",
+                  "    iat: nowSec,",
+                  "    exp: nowSec + 3600",
+                  "}));",
+                  "",
+                  "const signingInput = header + '.' + payload;",
+                  "const signature = base64UrlEncodeBytes(",
+                  "    CryptoJS.HmacSHA256(signingInput, signingKey)",
+                  ");",
+                  "",
+                  "const jwt = signingInput + '.' + signature;",
+                  "pm.collectionVariables.set('jwtToken', jwt);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted (JWT auth)', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jobs — Correlation ID",
+      "description": "Tests that correlation IDs are propagated correctly through requests.",
+      "item": [
+        {
+          "name": "Custom X-Correlation-Id is echoed in response — POST /jobs → 202",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" },
+              { "key": "X-Correlation-Id", "value": "{{correlationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"correlation-test\",\n  \"payload\": { \"note\": \"testing correlation ID propagation\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Sends a custom `X-Correlation-Id` header and verifies it flows through to the response body's `correlationId` field."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const cid = pm.variables.replaceIn('{{$guid}}');",
+                  "pm.variables.set('correlationId', cid);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('correlationId in response matches sent header', () => {",
+                  "    const body = pm.response.json();",
+                  "    const sentId = pm.variables.get('correlationId');",
+                  "    pm.expect(body.correlationId).to.equal(sentId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auto-generated X-Correlation-Id when omitted — POST /jobs → 202",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"correlation-auto-test\",\n  \"payload\": { \"note\": \"no correlation ID header sent\" }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/jobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["jobs"]
+            },
+            "description": "Omits `X-Correlation-Id`. The API should auto-generate one and include it in the response."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('API auto-generated a correlationId', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.correlationId).to.be.a('string').and.to.have.length.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
