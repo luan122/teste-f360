@@ -26,7 +26,14 @@ public sealed class JobsController(
 
     /// <summary>Submits a new job for durable processing.</summary>
     [HttpPost]
-    public async Task<IActionResult> CreateJobAsync(CancellationToken cancellationToken)
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateJobAsync(
+        [FromBody] CreateJobRequest request,
+        CancellationToken cancellationToken)
     {
         if (!HttpContext.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var idempotencyKeyValues)
             || string.IsNullOrWhiteSpace(idempotencyKeyValues))
@@ -38,31 +45,6 @@ public sealed class JobsController(
 
         var idempotencyKey = idempotencyKeyValues.ToString();
 
-        HttpContext.Request.EnableBuffering();
-        using var reader = new StreamReader(HttpContext.Request.Body, Encoding.UTF8, leaveOpen: true);
-        var rawBody = await reader.ReadToEndAsync(cancellationToken);
-        HttpContext.Request.Body.Position = 0;
-
-        CreateJobRequest? request;
-        try
-        {
-            request = JsonSerializer.Deserialize<CreateJobRequest>(
-                rawBody, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        }
-        catch (JsonException)
-        {
-            return Problem(
-                detail: "Request body is not valid JSON.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request is null)
-        {
-            return Problem(
-                detail: "Request body is required.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
         var inputValidation = await createRequestValidator.ValidateAsync(request, cancellationToken);
         if (!inputValidation.IsValid)
         {
@@ -73,7 +55,7 @@ public sealed class JobsController(
 
         var command = new CreateJobCommand(
             idempotencyKey,
-            ComputeRequestHash(rawBody),
+            ComputeRequestHash(request),
             request.Type,
             request.ParsePriority(),
             request.SerializePayload(),
@@ -98,6 +80,9 @@ public sealed class JobsController(
 
     /// <summary>Returns the current status of a job.</summary>
     [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(JobStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetJobAsync(Guid id, CancellationToken cancellationToken)
     {
         var dto = await sender.Send(new GetJobStatusQuery(id), cancellationToken);
@@ -116,6 +101,10 @@ public sealed class JobsController(
 
     /// <summary>Requests cooperative cancellation of a job.</summary>
     [HttpPost("{id:guid}/cancel")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CancelJobAsync(Guid id, CancellationToken cancellationToken)
     {
         try
@@ -137,6 +126,7 @@ public sealed class JobsController(
         }
     }
 
-    private static string ComputeRequestHash(string rawBody) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawBody)));
+    private static string ComputeRequestHash(CreateJobRequest request) =>
+        Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonSerializerOptions.Web))));
 }
