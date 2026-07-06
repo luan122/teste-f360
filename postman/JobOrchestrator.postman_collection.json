@@ -8,7 +8,9 @@
   "variable": [
     { "key": "jobId", "value": "", "type": "string" },
     { "key": "idempotencyKey", "value": "", "type": "string" },
-    { "key": "jwtToken", "value": "", "type": "string" }
+    { "key": "jwtToken", "value": "", "type": "string" },
+    { "key": "scheduledAt", "value": "", "type": "string" },
+    { "key": "correlationId", "value": "", "type": "string" }
   ],
   "auth": {
     "type": "apikey",
@@ -874,7 +876,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"correlation-test\",\n  \"payload\": { \"note\": \"testing correlation ID propagation\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"note\": \"testing correlation ID propagation\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -922,7 +924,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"correlation-auto-test\",\n  \"payload\": { \"note\": \"no correlation ID header sent\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"note\": \"no correlation ID header sent\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
