@@ -32,7 +32,7 @@ services:
       context: .
       dockerfile: src/JobOrchestrator.Api/Dockerfile
     ports:
-      - "8080:8080"
+      - "5074:8080"
     environment:
       Mongo__ConnectionString: mongodb://mongo:27017/?replicaSet=rs0
       Mongo__DatabaseName: joborchestrator
@@ -55,7 +55,7 @@ services:
       context: .
       dockerfile: src/JobOrchestrator.Worker/Dockerfile
     ports:
-      - "8081:8080"
+      - "5090:8080"
     environment:
       Mongo__ConnectionString: mongodb://mongo:27017/?replicaSet=rs0
       Mongo__DatabaseName: joborchestrator
