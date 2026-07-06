@@ -30,6 +30,7 @@ app.UseMiddleware<ValidationExceptionMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
