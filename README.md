@@ -1,76 +1,69 @@
-# Distributed Job Orchestrator
+# Orquestrador de Jobs Distribuído
 
-A high-availability, distributed job orchestrator built in C#/.NET 9 using Clean Architecture
-and DDD. It ingests job submissions over HTTP and processes them asynchronously with a pool of
-workers, guaranteeing that **no job is ever lost** — even if the API process, the message
-broker, or the database crashes mid-flight.
+Um orquestrador de jobs distribuído de alta disponibilidade, construído em C#/.NET 9 com Clean
+Architecture e DDD. Ele ingere submissões de jobs via HTTP e os processa de forma assíncrona com
+um pool de workers, garantindo que **nenhum job seja perdido** — mesmo que o processo da API, o
+message broker ou o banco de dados falhem durante a execução.
 
-This repository is the implementation of the take-home challenge described in
-[`GOAL.md`](../GOAL.md) (Portuguese, one directory above this repo root): design and build a
-distributed job orchestrator that can absorb thousands of requests per minute, survive
-infrastructure failures without losing work, support job priority ("Alta" jobs jump the queue),
-scheduled execution, cooperative cancellation, and resilient processing (circuit breaker + Dead
-Letter Queue), all on top of a NoSQL store and RabbitMQ.
+Para a narrativa completa da arquitetura — o mapa de camadas da Clean Architecture, o Outbox
+transacional, o mecanismo de claim distribuído, os diagramas C4 e o log de ADRs por trás de
+cada decisão técnica — veja **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**.
 
-For the full architecture narrative — the Clean Architecture layer map, the transactional
-Outbox, the distributed claim mechanism, C4 diagrams, and the ADR log behind every major
-technology choice — see **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**. For the spec-driven-development
-artifacts (per-feature `spec.md`/`plan.md`/`tasks.md` and the full GOAL.md traceability matrix),
-see **[`README-SPECS.md`](./README-SPECS.md)** and the **[`specs/`](./specs/)** folder.
+## Como funciona, em um parágrafo
 
-## How it works, in one paragraph
+Um cliente chama `POST /jobs` com um `Idempotency-Key`. A API valida o payload e grava o novo
+`Job` **e** um registro de outbox em uma única transação MongoDB — nunca "salva e depois publica"
+sem garantia. Um Outbox Dispatcher separado varre as linhas de outbox não enviadas e as publica
+no RabbitMQ (com suporte a prioridade, via `x-max-priority`). Os workers consomem essas
+mensagens, reivindicam o job atomicamente (`Queued → Processing`, protegido por uma atualização
+condicional atômica para que dois workers nunca reivindiquem o mesmo job), executam o handler e
+registram o resultado. Falhas são reprocessadas com backoff até um limite; quando esgotado (ou em
+caso de mensagem inválida), o job vai para a fila de mensagens mortas e a mensagem é roteada
+para a fila `_error` do RabbitMQ. Cada requisição carrega um `CorrelationId` que flui do log da
+API pelos cabeçalhos da mensagem no outbox até os logs do worker, permitindo rastrear toda a
+requisição de ponta a ponta.
 
-A client calls `POST /jobs` with an `Idempotency-Key`. The API validates the payload, and writes
-the new `Job` **and** an outbox record in a single MongoDB transaction — never "save, then
-publish" without a guarantee. A separate Outbox Dispatcher polls unsent outbox rows and publishes
-them to RabbitMQ (priority-aware, via `x-max-priority`). Workers consume those messages,
-atomically claim the job (`Queued → Processing`, guarded by an atomic conditional update so two
-workers can never claim the same job), execute the handler, and record the outcome. Failures are
-retried with backoff up to a budget; once exhausted (or on a poison message), the job is
-dead-lettered and the message routed to RabbitMQ's `_error` queue. Every request carries a
-`CorrelationId` that flows from the API log through the outbox message headers into the worker's
-logs, so one request is traceable end-to-end.
+## Pré-requisitos
 
-## Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) e Docker Compose (v2, o plugin CLI `docker compose`
+  — incluído no Docker Desktop).
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (veja [`global.json`](./global.json)
+  para a versão exata fixada) — necessário apenas para build/execução/debug fora de containers
+  ou para rodar os testes localmente.
 
-- [Docker](https://docs.docker.com/get-docker/) and Docker Compose (v2, the `docker compose`
-  CLI plugin — bundled with Docker Desktop).
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (see [`global.json`](./global.json)
-  for the exact pinned version) — only needed if you want to build/run/debug outside containers,
-  or run the test suites locally.
-
-## Quick start
+## Início rápido
 
 ```bash
 docker compose up
 ```
 
-This brings up, per [`specs/001-solution-foundation`](./specs/001-solution-foundation/spec.md):
+Isso sobe:
 
-- **MongoDB**, initialized as a single-node **replica set** (required for the multi-document
-  transactions the Outbox pattern relies on — see `ARCHITECTURE.md` ADR-001). The compose
-  healthcheck runs `rs.initiate()` on first start before the API/Worker are allowed to start.
-- **RabbitMQ**, with the management UI exposed (default `http://localhost:15672`, `guest`/`guest`
-  in the local compose file) and a priority-enabled queue (`x-max-priority`) for `JobQueued`
-  messages.
-- **Api** (`JobOrchestrator.Api`), listening on `http://localhost:8080`.
-- **Worker** (`JobOrchestrator.Worker`), running the Outbox Dispatcher, the scheduled-job
-  releaser, and the `JobQueued` consumer as background services, plus its own `/health/live` and
-  `/health/ready` endpoints on `http://localhost:8081`.
+- **MongoDB**, inicializado como **replica set** de nó único (necessário para as transações
+  multi-documento que o padrão Outbox usa — veja `ARCHITECTURE.md` ADR-001). O healthcheck do
+  Compose executa `rs.initiate()` na primeira inicialização antes de permitir que a API e o
+  Worker subam.
+- **RabbitMQ**, com a UI de gerenciamento exposta (padrão `http://localhost:15672`,
+  `guest`/`guest` no arquivo local) e uma fila com prioridade habilitada (`x-max-priority`) para
+  mensagens `JobQueued`.
+- **Api** (`JobOrchestrator.Api`), ouvindo em `http://localhost:8080`.
+- **Worker** (`JobOrchestrator.Worker`), executando o Outbox Dispatcher, o liberador de jobs
+  agendados e o consumer de `JobQueued` como background services, além dos próprios endpoints
+  `/health/live` e `/health/ready` em `http://localhost:8081`.
 
-If port `8080`/`8081` is already taken on your machine, remap the left-hand side in
-`docker-compose.yml`'s `ports:` entries.
+Se as portas `8080`/`8081` já estiverem em uso, remapeie o lado esquerdo nas entradas `ports:`
+do `docker-compose.yml`.
 
-Once the stack is healthy, confirm both hosts are up:
+Com o stack saudável, confirme que ambos os hosts estão no ar:
 
 ```bash
 curl http://localhost:8080/health/live
-curl http://localhost:8080/health/ready   # 200 only when Mongo + RabbitMQ are both reachable
+curl http://localhost:8080/health/ready   # 200 somente quando Mongo + RabbitMQ estão acessíveis
 curl http://localhost:8081/health/live
 curl http://localhost:8081/health/ready
 ```
 
-### Running without Docker
+### Executando sem Docker
 
 ```bash
 dotnet build JobOrchestrator.slnx
@@ -78,46 +71,46 @@ dotnet run --project src/JobOrchestrator.Api
 dotnet run --project src/JobOrchestrator.Worker
 ```
 
-You'll need a local MongoDB replica set and RabbitMQ reachable at the connection strings in
+Você vai precisar de um replica set MongoDB local e RabbitMQ acessíveis nas connection strings de
 `src/JobOrchestrator.Api/appsettings.Development.json` / `src/JobOrchestrator.Worker/appsettings.json`
-(override via environment variables or user secrets — never commit real connection strings, per
-constitution §6).
+(substitua via variáveis de ambiente ou user secrets — nunca commite connection strings reais).
 
-### Running the tests
+### Executando os testes
 
 ```bash
 dotnet test JobOrchestrator.slnx
 ```
 
-Unit tests (`tests/JobOrchestrator.UnitTests`) run with no external infrastructure — including an
-architecture test that fails the build if `Domain` ever references `Infrastructure`, MongoDB, or
-MassTransit. Integration tests (`tests/JobOrchestrator.IntegrationTests`) spin up a Testcontainers
-MongoDB replica set (and RabbitMQ, for messaging-related suites) automatically — only Docker is
-required, not a running compose stack.
+Testes unitários (`tests/JobOrchestrator.UnitTests`) rodam sem infraestrutura externa — incluindo
+um teste de arquitetura que quebra o build se `Domain` referenciar `Infrastructure`, MongoDB ou
+MassTransit. Testes de integração (`tests/JobOrchestrator.IntegrationTests`) sobem um replica set
+MongoDB via Testcontainers (e RabbitMQ, para as suites de mensageria) automaticamente — somente
+o Docker é necessário, não um stack em execução.
 
-## Authentication
+## Autenticação
 
-Every `/jobs` endpoint requires authentication; only health/liveness endpoints are anonymous
-(constitution §6). Two schemes are accepted — send **either**:
+Todo endpoint `/jobs` requer autenticação; apenas os endpoints de health/liveness são anônimos.
+Dois esquemas são aceitos — envie **um deles**:
 
-- **API Key** — header `X-Api-Key: <key>`. In the local compose/dev configuration, the seeded
-  key is `local-dev-api-key` (see `src/JobOrchestrator.Api/appsettings.json`, section `ApiKeys`).
-  In any real deployment this must be overridden via configuration/environment, never left as
-  the sample value.
-- **JWT bearer** — header `Authorization: Bearer <jwt>`, validated against the `Jwt` configuration
-  section (`Issuer`, `Audience`, `SigningKey`). Token issuance is external to this system — the
-  API validates tokens, it does not mint them.
+- **API Key** — header `X-Api-Key: <chave>`. Na configuração local do Compose/dev, a chave
+  pré-configurada é `local-dev-api-key` (veja `src/JobOrchestrator.Api/appsettings.json`, seção
+  `ApiKeys`). Em qualquer implantação real, deve ser substituída via configuração/ambiente, nunca
+  deixada como valor de exemplo.
+- **JWT bearer** — header `Authorization: Bearer <jwt>`, validado contra a seção `Jwt` da
+  configuração (`Issuer`, `Audience`, `SigningKey`). A emissão de tokens é externa a este sistema
+  — a API valida tokens, não os emite.
 
-An unauthenticated or invalid-credential request to any `/jobs` route returns `401`.
+Uma requisição não autenticada ou com credenciais inválidas para qualquer rota `/jobs` retorna
+`401`.
 
-## Using the API
+## Usando a API
 
-Full contract: [`specs/002-ingestion-api/contracts/openapi.yaml`](./specs/002-ingestion-api/contracts/openapi.yaml).
+Contrato completo da API disponível via Swagger UI em `/swagger` ao rodar em modo Development.
 
-### Submit a job
+### Enviar um job
 
-`Idempotency-Key` is **required** — retrying the same key with the same body returns the
-original job (never a duplicate); reusing it with a *different* body returns `409`.
+`Idempotency-Key` é **obrigatório** — retentar com a mesma chave e mesmo body retorna o job
+original (nunca um duplicado); reutilizá-la com um body *diferente* retorna `409`.
 
 ```bash
 curl -i -X POST http://localhost:8080/jobs \
@@ -133,7 +126,7 @@ curl -i -X POST http://localhost:8080/jobs \
       }'
 ```
 
-A successful response is `202 Accepted` with a `Location` header and body:
+Uma resposta bem-sucedida é `202 Accepted` com um header `Location` e body:
 
 ```json
 {
@@ -143,14 +136,13 @@ A successful response is `202 Accepted` with a `Location` header and body:
 }
 ```
 
-(An immediate job — no `scheduledAt` — is queued for delivery right away. A job with a future
-`scheduledAt` instead comes back `"status": "Scheduled"`.)
+(Um job imediato — sem `scheduledAt` — é enfileirado para entrega imediata. Um job com
+`scheduledAt` futuro retorna `"status": "Scheduled"`.)
 
-To schedule a job for the future instead of running it immediately, add `"scheduledAt"`
-(ISO-8601, e.g. `"2026-07-03T10:00:00Z"`) to the body — the job stays `Scheduled` until due, per
-[`specs/003-task-management`](./specs/003-task-management/spec.md).
+Para agendar um job para o futuro ao invés de executar imediatamente, adicione `"scheduledAt"`
+(ISO-8601, ex.: `"2026-07-03T10:00:00Z"`) ao body — o job fica `Scheduled` até o vencimento.
 
-### Check job status
+### Consultar status do job
 
 ```bash
 curl http://localhost:8080/jobs/b2b1a7e0-.... \
@@ -173,48 +165,43 @@ curl http://localhost:8080/jobs/b2b1a7e0-.... \
 }
 ```
 
-Unknown ids return `404`.
+IDs desconhecidos retornam `404`.
 
-### Cancel a job
+### Cancelar um job
 
-Legal while the job is `Scheduled`, `Queued`, or `Processing`; cancelling an already-`Cancelled`
-job is a no-op success, and cancelling a job in a terminal state (`Completed`/`DeadLettered`)
-returns `409`.
+Permitido enquanto o job estiver `Scheduled`, `Queued` ou `Processing`; cancelar um job já
+`Cancelled` é bem-sucedido sem efeito, e cancelar um job em estado terminal (`Completed` ou
+`DeadLettered`) retorna `409`.
 
 ```bash
 curl -i -X POST http://localhost:8080/jobs/b2b1a7e0-.../cancel \
   -H "X-Api-Key: local-dev-api-key"
 ```
 
-A successful request returns `202 Accepted`. If the job is `Processing`, cancellation is
-cooperative: the worker's `CancellationToken` is signalled and the job transitions to `Cancelled`
-at the next safe checkpoint (see [`specs/003-task-management`](./specs/003-task-management/spec.md)).
+Uma requisição bem-sucedida retorna `202 Accepted`. Se o job estiver `Processing`, o cancelamento
+é cooperativo: o `CancellationToken` do worker é sinalizado e o job transita para `Cancelled`
+no próximo ponto seguro de verificação.
 
-## Project layout
+## Estrutura do projeto
 
 ```
 src/
-  JobOrchestrator.Domain          # Entities, value objects, the Job state machine — no external deps
-  JobOrchestrator.Application     # CQRS commands/queries (MediatR), ports (interfaces), validators
-  JobOrchestrator.Infrastructure  # Mongo repositories/UoW, MassTransit, Polly, Serilog implementations
-  JobOrchestrator.Api             # Ingestion API host — composition root, endpoints, auth
-  JobOrchestrator.Worker          # Worker host — composition root, Outbox Dispatcher, consumers
+  JobOrchestrator.Domain          # Entidades, value objects, a máquina de estados do Job — sem deps externas
+  JobOrchestrator.Application     # Comandos/queries CQRS (MediatR), ports (interfaces), validadores
+  JobOrchestrator.Infrastructure  # Repositórios Mongo/UoW, MassTransit, Polly, implementações Serilog
+  JobOrchestrator.Api             # Host da API de ingestão — composition root, endpoints, auth
+  JobOrchestrator.Worker          # Host do Worker — composition root, Outbox Dispatcher, consumers
 tests/
-  JobOrchestrator.UnitTests        # Domain + architecture-rule tests, no external infrastructure
-  JobOrchestrator.IntegrationTests # Testcontainers-backed Mongo/RabbitMQ integration tests
-specs/                            # Spec-driven-development artifacts (spec/plan/tasks per feature)
-infra/terraform/                  # IaC for the reference AWS deployment (see ARCHITECTURE.md ADR-008)
-docs/diagrams/                    # Standalone copy of the C4 diagrams
+  JobOrchestrator.UnitTests        # Testes de domínio + regras de arquitetura, sem infraestrutura externa
+  JobOrchestrator.IntegrationTests # Testes de integração com Mongo/RabbitMQ via Testcontainers
+infra/terraform/                  # IaC para a implantação de referência na AWS (veja ARCHITECTURE.md ADR-008)
+docs/diagrams/                    # Cópia autônoma dos diagramas C4
 ```
 
-## Further reading
+## Leitura adicional
 
-- **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** — system overview, Clean Architecture layer map,
-  the reliability story (Outbox/claim/idempotency/DLQ), C4 diagrams, and the full ADR log.
-- **[`README-SPECS.md`](./README-SPECS.md)** — how the spec-driven-development artifacts are
-  organized, the feature catalog, and the GOAL.md → spec → acceptance-criterion traceability
-  matrix.
-- **[`specs/`](./specs/)** — one folder per capability (`000-domain-model` through
-  `007-deliverables`), each with `spec.md` (what/why) and `plan.md` (how).
-- **[`infra/terraform/README.md`](./infra/terraform/README.md)** — prerequisites and the
-  init/validate/plan/apply flow for the Terraform IaC.
+- **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** — visão geral do sistema, mapa de camadas da Clean
+  Architecture, a história de confiabilidade (Outbox/claim/idempotência/DLQ), diagramas C4 e o
+  log completo de ADRs.
+- **[`infra/terraform/README.md`](./infra/terraform/README.md)** — pré-requisitos e o fluxo
+  init/validate/plan/apply do Terraform IaC.
