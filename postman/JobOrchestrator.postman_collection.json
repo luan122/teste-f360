@@ -98,7 +98,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"maxAttempts\": 5,\n  \"payload\": {\n    \"to\": \"user@example.com\",\n    \"subject\": \"Hello from Job Orchestrator\",\n    \"body\": \"This is a test email job.\"\n  }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"Low\",\n  \"maxAttempts\": 5,\n  \"payload\": {\n    \"message\": \"Hello from Job Orchestrator demo job!\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -167,7 +167,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 1,\n  \"priority\": \"High\",\n  \"maxAttempts\": 3,\n  \"payload\": {\n    \"orderId\": \"ORD-12345\",\n    \"amount\": 99.99,\n    \"currency\": \"USD\"\n  }\n}",
+              "raw": "{\n  \"type\": 1,\n  \"priority\": \"High\",\n  \"maxAttempts\": 3,\n  \"payload\": {\n    \"message\": \"High priority delayed demo job\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -211,7 +211,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 1,\n  \"priority\": \"Low\",\n  \"scheduledAt\": \"{{scheduledAt}}\",\n  \"maxAttempts\": 2,\n  \"payload\": {\n    \"reportType\": \"monthly-summary\",\n    \"recipientEmail\": \"manager@example.com\"\n  }\n}",
+              "raw": "{\n  \"type\": 1,\n  \"priority\": \"Low\",\n  \"scheduledAt\": \"{{scheduledAt}}\",\n  \"maxAttempts\": 2,\n  \"payload\": {\n    \"message\": \"Scheduled delayed demo job\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -471,7 +471,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -504,7 +504,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"priority\": \"Low\",\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"priority\": \"Low\",\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -537,7 +537,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"priority\": \"URGENT\",\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"priority\": \"URGENT\",\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -570,7 +570,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"scheduledAt\": \"2000-01-01T00:00:00Z\",\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"scheduledAt\": \"2000-01-01T00:00:00Z\",\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -603,7 +603,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"maxAttempts\": 0,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"maxAttempts\": 0,\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -636,7 +636,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"maxAttempts\": 101,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"maxAttempts\": 101,\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -732,7 +732,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"to\": \"user@example.com\" }\n}",
+              "raw": "{\n  \"type\": 0,\n  \"payload\": { \"message\": \"Validation or auth demo request\" }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
