@@ -66,7 +66,7 @@ public sealed class JobsController(
         var response = new JobAcceptedResponse(result.Job.JobId, result.Job.Status.ToString(), result.Job.CorrelationId);
         await acceptedResponseValidator.ValidateAndThrowAsync(response, cancellationToken);
 
-        return AcceptedAtAction(nameof(GetJobAsync), new { id = result.Job.JobId }, response);
+        return AcceptedAtAction(nameof(GetJobAsync), "Jobs", new { id = result.Job.JobId }, response);
     }
 
     /// <summary>Returns the current status of a job.</summary>
