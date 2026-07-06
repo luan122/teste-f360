@@ -16,19 +16,16 @@ namespace JobOrchestrator.Infrastructure.Messaging;
 public sealed class OutboxDispatcher : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IPublishEndpoint _publishEndpoint;
     private readonly OutboxDispatcherOptions _options;
     private readonly ILogger<OutboxDispatcher> _logger;
     private readonly string _leaseOwner;
 
     public OutboxDispatcher(
         IServiceScopeFactory scopeFactory,
-        IPublishEndpoint publishEndpoint,
         IOptions<OutboxDispatcherOptions> options,
         ILogger<OutboxDispatcher> logger)
     {
         _scopeFactory = scopeFactory;
-        _publishEndpoint = publishEndpoint;
         _options = options.Value;
         _logger = logger;
         _leaseOwner = $"{Environment.MachineName}-{Guid.NewGuid()}";
@@ -70,6 +67,7 @@ public sealed class OutboxDispatcher : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var outboxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        var publishEndpoint = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
 
         var leased = await outboxRepository.LeasePendingBatchAsync(
             _leaseOwner, leaseDuration, _options.BatchSize, cancellationToken);
@@ -89,7 +87,7 @@ public sealed class OutboxDispatcher : BackgroundService
                 var payload = JsonSerializer.Deserialize<JobQueued>(message.Payload)
                     ?? throw new InvalidOperationException("Deserialized JobQueued payload was null.");
 
-                await _publishEndpoint.Publish(
+                await publishEndpoint.Publish(
                     payload,
                     ctx => ctx.SetPriority(MapPriority(payload.Priority)),
                     cancellationToken);
