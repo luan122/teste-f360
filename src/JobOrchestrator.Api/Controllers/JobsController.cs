@@ -22,10 +22,9 @@ public sealed class JobsController(
     IValidator<JobAcceptedResponse> acceptedResponseValidator,
     IValidator<JobStatusResponse> statusResponseValidator) : ControllerBase
 {
-    private const string IdempotencyKeyHeader = "Idempotency-Key";
-
     /// <summary>Submits a new job for durable processing.</summary>
     [HttpPost]
+    [RequiresIdempotencyKey]
     [Consumes("application/json")]
     [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -35,15 +34,7 @@ public sealed class JobsController(
         [FromBody] CreateJobRequest request,
         CancellationToken cancellationToken)
     {
-        if (!HttpContext.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var idempotencyKeyValues)
-            || string.IsNullOrWhiteSpace(idempotencyKeyValues))
-        {
-            return Problem(
-                detail: $"The '{IdempotencyKeyHeader}' header is required.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        var idempotencyKey = idempotencyKeyValues.ToString();
+        var idempotencyKey = HttpContext.GetIdempotencyKey();
 
         var inputValidation = await createRequestValidator.ValidateAsync(request, cancellationToken);
         if (!inputValidation.IsValid)
