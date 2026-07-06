@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="NSubstitute" />
+    <!-- Added for specs/005-resilience: PollyExternalDependencyGatewayTests builds a
+         ResiliencePipeline mirroring JobOrchestrator.Infrastructure.Resilience's production
+         pipeline. Versions are centrally managed in Directory.Packages.props (already declared
+         there for the Infrastructure project). -->
+    <PackageReference Include="Polly" />
+    <PackageReference Include="Polly.Extensions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\JobOrchestrator.Domain\JobOrchestrator.Domain.csproj" />
+    <ProjectReference Include="..\..\src\JobOrchestrator.Application\JobOrchestrator.Application.csproj" />
+    <!--
+      Added for specs/006-observability: SerilogConfigurationTests exercises
+      JobOrchestrator.Infrastructure.Observability.SerilogConfiguration, which lives in
+      Infrastructure. This project previously only referenced Domain + Application.
+    -->
+    <ProjectReference Include="..\..\src\JobOrchestrator.Infrastructure\JobOrchestrator.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

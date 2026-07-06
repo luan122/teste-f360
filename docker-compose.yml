@@ -1,0 +1,73 @@
+services:
+  mongo:
+    image: mongo:7.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: >
+        mongosh --quiet --eval
+        "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: src/JobOrchestrator.Api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      Mongo__ConnectionString: mongodb://mongo:27017/?replicaSet=rs0
+      Mongo__DatabaseName: joborchestrator
+      RabbitMq__Host: rabbitmq
+      RabbitMq__VirtualHost: /
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+      Jwt__Issuer: job-orchestrator
+      Jwt__Audience: job-orchestrator-clients
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-local-dev-signing-key-change-me-please-32b}
+      ApiKeys__Keys__0: ${API_KEY:-local-dev-api-key}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/JobOrchestrator.Worker/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      Mongo__ConnectionString: mongodb://mongo:27017/?replicaSet=rs0
+      Mongo__DatabaseName: joborchestrator
+      RabbitMq__Host: rabbitmq
+      RabbitMq__VirtualHost: /
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

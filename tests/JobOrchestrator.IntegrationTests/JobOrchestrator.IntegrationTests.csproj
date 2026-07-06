@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.MongoDb" />
+    <PackageReference Include="Testcontainers.RabbitMq" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\JobOrchestrator.Domain\JobOrchestrator.Domain.csproj" />
+    <ProjectReference Include="..\..\src\JobOrchestrator.Application\JobOrchestrator.Application.csproj" />
+    <ProjectReference Include="..\..\src\JobOrchestrator.Infrastructure\JobOrchestrator.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\JobOrchestrator.Api\JobOrchestrator.Api.csproj" />
+    <ProjectReference Include="..\..\src\JobOrchestrator.Worker\JobOrchestrator.Worker.csproj" />
+  </ItemGroup>
+
+</Project>
