@@ -1,6 +1,8 @@
+using System.Reflection;
 using System.Text;
 using FluentValidation;
 using JobOrchestrator.Api.Auth;
+using JobOrchestrator.Api.Middleware;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -67,6 +69,7 @@ public static class IngestionApiServiceCollectionExtensions
                 Type = SecuritySchemeType.ApiKey,
                 In = ParameterLocation.Header,
                 Name = ApiKeyAuthenticationHandler.HeaderName,
+                Description = "Chave de API estática via cabeçalho X-Api-Key",
             });
 
             options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, new OpenApiSecurityScheme
@@ -74,7 +77,29 @@ public static class IngestionApiServiceCollectionExtensions
                 Type = SecuritySchemeType.Http,
                 Scheme = "bearer",
                 BearerFormat = "JWT",
+                Description = "JWT obtido via POST /auth/token",
             });
+
+            options.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
+                {
+                    new OpenApiSecurityScheme
+                    {
+                        Reference = new OpenApiReference
+                            { Type = ReferenceType.SecurityScheme, Id = ApiKeyAuthenticationHandler.SchemeName }
+                    },
+                    Array.Empty<string>()
+                }
+            });
+
+            options.SchemaFilter<EnumDescriptionSchemaFilter>();
+
+            options.OperationFilter<IdempotencyKeyOperationFilter>();
+
+            var xmlPath = Path.Combine(AppContext.BaseDirectory,
+                $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
+            if (File.Exists(xmlPath))
+                options.IncludeXmlComments(xmlPath);
         });
 
         return services;

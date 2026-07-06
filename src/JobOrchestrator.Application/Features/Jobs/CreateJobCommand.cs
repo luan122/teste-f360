@@ -7,7 +7,7 @@ namespace JobOrchestrator.Application.Features.Jobs;
 public sealed record CreateJobCommand(
     string IdempotencyKey,
     string RequestHash,
-    string Type,
+    JobTypes Type,
     Priority Priority,
     string Payload,
     DateTimeOffset? ScheduledAt,

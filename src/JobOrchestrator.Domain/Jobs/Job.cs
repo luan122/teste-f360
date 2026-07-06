@@ -8,7 +8,7 @@ public sealed class Job
     private Job(
         Guid jobId,
         string idempotencyKey,
-        string type,
+        JobTypes type,
         string payload,
         Priority priority,
         JobStatus status,
@@ -32,7 +32,7 @@ public sealed class Job
 
     public Guid JobId { get; }
     public string IdempotencyKey { get; }
-    public string Type { get; }
+    public JobTypes Type { get; }
     public string Payload { get; }
     public Priority Priority { get; }
     public JobStatus Status { get; private set; }
@@ -49,7 +49,7 @@ public sealed class Job
     public static Job Create(
         Guid jobId,
         string idempotencyKey,
-        string type,
+        JobTypes type,
         string payload,
         Priority priority,
         DateTimeOffset? scheduledAt,
@@ -59,8 +59,8 @@ public sealed class Job
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             throw new ArgumentException("Idempotency key is required.", nameof(idempotencyKey));
-        if (string.IsNullOrWhiteSpace(type))
-            throw new ArgumentException("Job type is required.", nameof(type));
+        if (!Enum.IsDefined(typeof(JobTypes), type))
+            throw new ArgumentException("Job type is required and must be valid.", nameof(type));
         if (maxAttempts < 1)
             throw new ArgumentOutOfRangeException(nameof(maxAttempts), maxAttempts, "Max attempts must be at least 1.");
         if (string.IsNullOrWhiteSpace(correlationId))
@@ -75,7 +75,7 @@ public sealed class Job
     public static Job Rehydrate(
         Guid jobId,
         string idempotencyKey,
-        string type,
+        JobTypes type,
         string payload,
         Priority priority,
         JobStatus status,

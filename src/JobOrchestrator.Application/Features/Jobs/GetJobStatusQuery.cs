@@ -1,3 +1,4 @@
+using JobOrchestrator.Domain.Jobs;
 using MediatR;
 
 namespace JobOrchestrator.Application.Features.Jobs;
@@ -8,7 +9,7 @@ public sealed record GetJobStatusQuery(Guid JobId) : IRequest<JobStatusDto?>;
 /// <summary>Maps 1:1 to <c>JobStatusResponse</c> in contracts/openapi.yaml.</summary>
 public sealed record JobStatusDto(
     Guid JobId,
-    string Type,
+    JobTypes Type,
     string Priority,
     string Status,
     DateTimeOffset? ScheduledAt,

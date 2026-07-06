@@ -25,7 +25,7 @@ public class CancelJobCommandHandlerTests
 
     private static Job QueuedJob()
     {
-        var job = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), "send-email", "{}", Priority.Low, null, 5,
+        var job = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}", Priority.Low, null, 5,
             Guid.NewGuid().ToString(), Now);
         job.MarkQueued(Now);
         return job;
@@ -60,7 +60,7 @@ public class CancelJobCommandHandlerTests
     [Fact]
     public async Task Handle_TerminalJob_ThrowsInvalidJobStateTransitionException()
     {
-        var completedJob = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), "send-email", "{}", Priority.Low, null, 5,
+        var completedJob = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}", Priority.Low, null, 5,
             Guid.NewGuid().ToString(), Now);
         completedJob.MarkQueued(Now);
         completedJob.StartProcessing(Now);

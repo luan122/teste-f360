@@ -85,7 +85,7 @@ public class MongoUnitOfWorkTests : IAsyncLifetime
     private static (Job Job, OutboxMessage OutboxMessage) CreateJobWithOutboxMessage()
     {
         var now = DateTimeOffset.UtcNow;
-        var job = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), "send-email", "{\"to\":\"a@b.com\"}",
+        var job = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{\"to\":\"a@b.com\"}",
             Priority.Low, null, 3, Guid.NewGuid().ToString(), now);
         var outboxMessage = OutboxMessage.Create(job.JobId, "JobQueued", "{}", now);
         return (job, outboxMessage);

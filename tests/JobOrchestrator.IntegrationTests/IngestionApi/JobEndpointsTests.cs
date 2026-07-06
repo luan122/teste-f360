@@ -34,7 +34,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
     private static StringContent JsonBody(object payload) =>
         new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-    private static object ValidRequestBody(string type = "send-email") => new
+    private static object ValidRequestBody(JobTypes type = JobTypes.Demo) => new
     {
         type,
         priority = "Low",
@@ -69,7 +69,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
     {
         var client = CreateAuthenticatedClient();
         var idempotencyKey = Guid.NewGuid().ToString();
-        var body = ValidRequestBody("duplicate-same-body");
+        var body = ValidRequestBody(JobTypes.Demo);
 
         var request1 = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(body) };
         request1.Headers.Add("Idempotency-Key", idempotencyKey);
@@ -100,12 +100,12 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
         var client = CreateAuthenticatedClient();
         var idempotencyKey = Guid.NewGuid().ToString();
 
-        var request1 = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody("type-a")) };
+        var request1 = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody(JobTypes.Demo)) };
         request1.Headers.Add("Idempotency-Key", idempotencyKey);
         var response1 = await client.SendAsync(request1);
         response1.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var request2 = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody("type-b")) };
+        var request2 = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody(JobTypes.DemoDelayed)) };
         request2.Headers.Add("Idempotency-Key", idempotencyKey);
         var response2 = await client.SendAsync(request2);
 
@@ -143,7 +143,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
     public async Task PostJobs_ValidRequest_Returns202AndPersistsJobAndOutboxAtomically()
     {
         var client = CreateAuthenticatedClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody("atomic-write")) };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody(JobTypes.Demo)) };
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
         var response = await client.SendAsync(request);
@@ -170,7 +170,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
     {
         var client = CreateAuthenticatedClient();
         var correlationId = Guid.NewGuid().ToString();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody("correlation-flow")) };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody(JobTypes.Demo)) };
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         request.Headers.Add("X-Correlation-Id", correlationId);
 
@@ -202,7 +202,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
     public async Task GetJob_ExistingJob_Returns200WithStatus()
     {
         var client = CreateAuthenticatedClient();
-        var createRequest = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody("get-status")) };
+        var createRequest = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody(JobTypes.Demo)) };
         createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var createResponse = await client.SendAsync(createRequest);
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -221,7 +221,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
     public async Task CancelJob_FreshlyCreatedQueuedJob_Returns202()
     {
         var client = CreateAuthenticatedClient();
-        var createRequest = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody("cancel-queued")) };
+        var createRequest = new HttpRequestMessage(HttpMethod.Post, "/jobs") { Content = JsonBody(ValidRequestBody(JobTypes.Demo)) };
         createRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var createResponse = await client.SendAsync(createRequest);
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -241,7 +241,7 @@ public sealed class JobEndpointsTests : IClassFixture<IngestionApiFactory>
         var jobRepository = new MongoJobRepository(database, sessionAccessor);
 
         var now = DateTimeOffset.UtcNow;
-        var job = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), "already-completed", "{}",
+        var job = Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}",
             Priority.Low, null, 3, Guid.NewGuid().ToString(), now);
         job.MarkQueued(now);
         job.StartProcessing(now);

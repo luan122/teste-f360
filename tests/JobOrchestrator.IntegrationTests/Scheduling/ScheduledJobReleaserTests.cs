@@ -99,7 +99,7 @@ public class ScheduledJobReleaserTests : IAsyncLifetime
     {
         var now = Clock.UtcNow;
         var dueJob = Job.Create(
-            Guid.NewGuid(), Guid.NewGuid().ToString(), "send-email", "{\"to\":\"a@b.com\"}",
+            Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{\"to\":\"a@b.com\"}",
             Priority.Low, now.AddMinutes(5), 3, Guid.NewGuid().ToString(), now);
         await _jobRepository.AddAsync(dueJob, CancellationToken.None);
 
@@ -129,7 +129,7 @@ public class ScheduledJobReleaserTests : IAsyncLifetime
     {
         var now = Clock.UtcNow;
         var futureJob = Job.Create(
-            Guid.NewGuid(), Guid.NewGuid().ToString(), "send-email", "{\"to\":\"a@b.com\"}",
+            Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{\"to\":\"a@b.com\"}",
             Priority.Low, now.AddHours(1), 3, Guid.NewGuid().ToString(), now);
         await _jobRepository.AddAsync(futureJob, CancellationToken.None);
 

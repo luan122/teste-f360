@@ -1,3 +1,4 @@
+using JobOrchestrator.Domain.Jobs;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -10,7 +11,7 @@ public sealed class JobDocument
     public Guid JobId { get; set; }
 
     public string IdempotencyKey { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
+    public JobTypes Type { get; set; }
     public BsonDocument Payload { get; set; } = [];
     public string Priority { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

@@ -18,125 +18,88 @@ namespace JobOrchestrator.Api.Controllers;
 [Authorize]
 public sealed class JobsController(
     ISender sender,
-    IValidator<CreateJobRequest> createRequestValidator,
-    IValidator<JobAcceptedResponse> acceptedResponseValidator,
-    IValidator<JobStatusResponse> statusResponseValidator) : ControllerBase
+    IValidator<CreateJobRequest> validator) : ControllerBase
 {
-    private const string IdempotencyKeyHeader = "Idempotency-Key";
-
     /// <summary>Submits a new job for durable processing.</summary>
     [HttpPost]
-    public async Task<IActionResult> CreateJobAsync(CancellationToken cancellationToken)
+    [RequiresIdempotencyKey]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateJob(
+        [FromBody] CreateJobRequest request,
+        CancellationToken cancellationToken)
     {
-        if (!HttpContext.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var idempotencyKeyValues)
-            || string.IsNullOrWhiteSpace(idempotencyKeyValues))
+        var validation = await validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
         {
-            return Problem(
-                detail: $"The '{IdempotencyKeyHeader}' header is required.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        var idempotencyKey = idempotencyKeyValues.ToString();
-
-        HttpContext.Request.EnableBuffering();
-        using var reader = new StreamReader(HttpContext.Request.Body, Encoding.UTF8, leaveOpen: true);
-        var rawBody = await reader.ReadToEndAsync(cancellationToken);
-        HttpContext.Request.Body.Position = 0;
-
-        CreateJobRequest? request;
-        try
-        {
-            request = JsonSerializer.Deserialize<CreateJobRequest>(
-                rawBody, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        }
-        catch (JsonException)
-        {
-            return Problem(
-                detail: "Request body is not valid JSON.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request is null)
-        {
-            return Problem(
-                detail: "Request body is required.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        var inputValidation = await createRequestValidator.ValidateAsync(request, cancellationToken);
-        if (!inputValidation.IsValid)
-        {
-            foreach (var error in inputValidation.Errors)
+            foreach (var error in validation.Errors)
                 ModelState.AddModelError(error.PropertyName, error.ErrorMessage);
-            return ValidationProblem(ModelState);
+            return ValidationProblem();
         }
 
-        var command = new CreateJobCommand(
-            idempotencyKey,
-            ComputeRequestHash(rawBody),
-            request.Type,
-            request.ParsePriority(),
-            request.SerializePayload(),
-            request.ScheduledAt,
-            request.ResolveMaxAttempts(),
-            HttpContext.GetCorrelationId());
-
-        var result = await sender.Send(command, cancellationToken);
+        var idempotencyKey = HttpContext.GetIdempotencyKey();
+        var result = await sender.Send(new CreateJobCommand(
+            IdempotencyKey: idempotencyKey,
+            RequestHash: ComputeHash(request),
+            Type: request.Type!.Value,
+            Priority: request.ParsePriority(),
+            Payload: request.SerializePayload(),
+            ScheduledAt: request.ScheduledAt,
+            MaxAttempts: request.ResolveMaxAttempts(),
+            CorrelationId: HttpContext.GetCorrelationId()),
+            cancellationToken);
 
         if (result.IsIdempotencyConflict)
-        {
             return Problem(
-                detail: $"Idempotency-Key '{idempotencyKey}' was already used with a different request body.",
+                detail: $"Idempotency-Key '{idempotencyKey}' was already used with a different payload.",
                 statusCode: StatusCodes.Status409Conflict);
-        }
 
-        var response = new JobAcceptedResponse(result.Job.JobId, result.Job.Status.ToString(), result.Job.CorrelationId);
-        await acceptedResponseValidator.ValidateAndThrowAsync(response, cancellationToken);
-
-        return AcceptedAtAction(nameof(GetJobAsync), new { id = result.Job.JobId }, response);
+        return AcceptedAtAction(
+            actionName: nameof(GetJob),
+            controllerName: "Jobs",
+            routeValues: new { id = result.Job.JobId },
+            value: new JobAcceptedResponse(result.Job.JobId, result.Job.Status.ToString(), result.Job.CorrelationId));
     }
 
     /// <summary>Returns the current status of a job.</summary>
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetJobAsync(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(JobStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetJob(Guid id, CancellationToken cancellationToken)
     {
         var dto = await sender.Send(new GetJobStatusQuery(id), cancellationToken);
-        if (dto is null)
-        {
-            return Problem(
-                detail: $"Job '{id}' was not found.",
-                statusCode: StatusCodes.Status404NotFound);
-        }
 
-        var response = JobStatusResponse.FromDto(dto);
-        await statusResponseValidator.ValidateAndThrowAsync(response, cancellationToken);
-
-        return Ok(response);
+        return dto is null
+            ? Problem(detail: $"Job '{id}' was not found.", statusCode: StatusCodes.Status404NotFound)
+            : Ok(JobStatusResponse.FromDto(dto));
     }
 
     /// <summary>Requests cooperative cancellation of a job.</summary>
     [HttpPost("{id:guid}/cancel")]
-    public async Task<IActionResult> CancelJobAsync(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CancelJob(Guid id, CancellationToken cancellationToken)
     {
         try
         {
             var result = await sender.Send(new CancelJobCommand(id), cancellationToken);
-            return result.Status switch
-            {
-                CancelJobStatus.NotFound => Problem(
-                    detail: $"Job '{id}' was not found.",
-                    statusCode: StatusCodes.Status404NotFound),
-                _ => Accepted(),
-            };
+            return result.Status == CancelJobStatus.NotFound
+                ? Problem(detail: $"Job '{id}' was not found.", statusCode: StatusCodes.Status404NotFound)
+                : Accepted();
         }
         catch (InvalidJobStateTransitionException ex)
         {
-            return Problem(
-                detail: ex.Message,
-                statusCode: StatusCodes.Status409Conflict);
+            return Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
         }
     }
 
-    private static string ComputeRequestHash(string rawBody) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawBody)));
+    private static string ComputeHash(CreateJobRequest request) =>
+        Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonSerializerOptions.Web))));
 }

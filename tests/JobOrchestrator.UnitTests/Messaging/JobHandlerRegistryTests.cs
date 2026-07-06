@@ -11,10 +11,10 @@ public class JobHandlerRegistryTests
     [Fact]
     public void Resolve_WithRegisteredType_ReturnsHandler()
     {
-        var handler = new FakeJobHandler("demo-job");
+        var handler = new FakeJobHandler(JobTypes.Demo);
         var registry = new JobHandlerRegistry([handler]);
 
-        var resolved = registry.Resolve("demo-job");
+        var resolved = registry.Resolve(JobTypes.Demo);
 
         resolved.Should().BeSameAs(handler);
     }
@@ -22,17 +22,17 @@ public class JobHandlerRegistryTests
     [Fact]
     public void Resolve_WithUnknownType_ThrowsPermanentJobException()
     {
-        var registry = new JobHandlerRegistry([new FakeJobHandler("demo-job")]);
+        var registry = new JobHandlerRegistry([new FakeJobHandler(JobTypes.Demo)]);
 
-        var act = () => registry.Resolve("does-not-exist");
+        var act = () => registry.Resolve((JobTypes)999);
 
         act.Should().Throw<PermanentJobException>()
-            .WithMessage("*does-not-exist*");
+            .WithMessage("*999*");
     }
 
-    private sealed class FakeJobHandler(string jobType) : IJobHandler
+    private sealed class FakeJobHandler(JobTypes jobType) : IJobHandler
     {
-        public string JobType { get; } = jobType;
+        public JobTypes JobType => jobType;
 
         public Task<string?> HandleAsync(Job job, CancellationToken cancellationToken) =>
             Task.FromResult<string?>(null);

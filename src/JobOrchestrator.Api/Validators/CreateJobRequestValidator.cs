@@ -10,8 +10,8 @@ public sealed class CreateJobRequestValidator : AbstractValidator<CreateJobReque
     public CreateJobRequestValidator()
     {
         RuleFor(x => x.Type)
-            .NotEmpty()
-            .MaximumLength(200);
+            .NotNull()
+            .IsInEnum();
 
         RuleFor(x => x.Priority)
             .Must(p => p is null || Enum.TryParse<Priority>(p, ignoreCase: false, out _))
