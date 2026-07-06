@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+.git/
+.specify/
+specs/
+.claude/
+tests/
+docs/
+infra/
+*.md

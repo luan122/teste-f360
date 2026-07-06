@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-JobOrchestrator.Worker-aa98affc-9ee7-4b98-9a62-4470d7111973</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Enables WebApplication/Kestrel/MapHealthChecks so this worker can expose /health/live
+         and /health/ready (specs/006-observability, FR-006-4) alongside its hosted services. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JobOrchestrator.Domain\JobOrchestrator.Domain.csproj" />
+    <ProjectReference Include="..\JobOrchestrator.Application\JobOrchestrator.Application.csproj" />
+    <ProjectReference Include="..\JobOrchestrator.Infrastructure\JobOrchestrator.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
