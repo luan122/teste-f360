@@ -42,7 +42,7 @@ public class CreateJobCommandHandlerTests
     private static CreateJobCommand Command(DateTimeOffset? scheduledAt, string correlationId) => new(
         IdempotencyKey: Guid.NewGuid().ToString(),
         RequestHash: "hash",
-        Type: "send-email",
+        Type: JobTypes.Demo,
         Priority: Priority.Low,
         Payload: "{}",
         ScheduledAt: scheduledAt,
@@ -87,14 +87,14 @@ public class CreateJobCommandHandlerTests
     public async Task Handle_DuplicateIdempotencyKey_SameHash_ReturnsExistingJobWithoutPersisting()
     {
         var existingJob = Job.Create(
-            Guid.NewGuid(), "key-1", "send-email", "{}", Priority.Low, null, 5,
+            Guid.NewGuid(), "key-1", JobTypes.Demo, "{}", Priority.Low, null, 5,
             Guid.NewGuid().ToString(), Now);
         var record = new IdempotencyRecord("key-1", existingJob.JobId, "hash", Now);
 
         _idempotencyStore.FindAsync("key-1", Arg.Any<CancellationToken>()).Returns(record);
         _jobRepository.GetByIdAsync(existingJob.JobId, Arg.Any<CancellationToken>()).Returns(existingJob);
 
-        var command = new CreateJobCommand("key-1", "hash", "send-email", Priority.Low, "{}", null, 5, "corr-1");
+        var command = new CreateJobCommand("key-1", "hash", JobTypes.Demo, Priority.Low, "{}", null, 5, "corr-1");
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -107,14 +107,14 @@ public class CreateJobCommandHandlerTests
     public async Task Handle_DuplicateIdempotencyKey_DifferentHash_ReturnsConflict()
     {
         var existingJob = Job.Create(
-            Guid.NewGuid(), "key-1", "send-email", "{}", Priority.Low, null, 5,
+            Guid.NewGuid(), "key-1", JobTypes.Demo, "{}", Priority.Low, null, 5,
             Guid.NewGuid().ToString(), Now);
         var record = new IdempotencyRecord("key-1", existingJob.JobId, "hash-original", Now);
 
         _idempotencyStore.FindAsync("key-1", Arg.Any<CancellationToken>()).Returns(record);
         _jobRepository.GetByIdAsync(existingJob.JobId, Arg.Any<CancellationToken>()).Returns(existingJob);
 
-        var command = new CreateJobCommand("key-1", "hash-different", "send-email", Priority.Low, "{}", null, 5, "corr-1");
+        var command = new CreateJobCommand("key-1", "hash-different", JobTypes.Demo, Priority.Low, "{}", null, 5, "corr-1");
 
         var result = await _handler.Handle(command, CancellationToken.None);
 

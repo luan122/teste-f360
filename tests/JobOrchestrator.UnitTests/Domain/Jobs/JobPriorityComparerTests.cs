@@ -8,7 +8,7 @@ public class JobPriorityComparerTests
     private static readonly DateTimeOffset Now = new(2026, 7, 2, 12, 0, 0, TimeSpan.Zero);
 
     private static Job CreateJob(Priority priority, DateTimeOffset createdAt) =>
-        Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), "type", "{}", priority, null, 3,
+        Job.Create(Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}", priority, null, 3,
             Guid.NewGuid().ToString(), createdAt);
 
     // AC-000-2 / AC-003-1: High sorts ahead of Low

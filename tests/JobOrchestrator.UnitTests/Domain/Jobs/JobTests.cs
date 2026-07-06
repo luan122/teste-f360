@@ -12,7 +12,7 @@ public class JobTests
         Job.Create(
             jobId: Guid.NewGuid(),
             idempotencyKey: Guid.NewGuid().ToString(),
-            type: "send-email",
+            type: JobTypes.Demo,
             payload: "{}",
             priority: priority,
             scheduledAt: scheduledAt,

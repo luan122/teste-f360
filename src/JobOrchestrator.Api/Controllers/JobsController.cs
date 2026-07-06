@@ -44,7 +44,7 @@ public sealed class JobsController(
         var result = await sender.Send(new CreateJobCommand(
             IdempotencyKey: idempotencyKey,
             RequestHash: ComputeHash(request),
-            Type: request.Type,
+            Type: request.Type!.Value,
             Priority: request.ParsePriority(),
             Payload: request.SerializePayload(),
             ScheduledAt: request.ScheduledAt,

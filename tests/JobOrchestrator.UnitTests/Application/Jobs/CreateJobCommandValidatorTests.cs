@@ -13,7 +13,7 @@ public class CreateJobCommandValidatorTests
     private static CreateJobCommand ValidCommand() => new(
         IdempotencyKey: Guid.NewGuid().ToString(),
         RequestHash: "hash",
-        Type: "send-email",
+        Type: JobTypes.Demo,
         Priority: Priority.Low,
         Payload: "{}",
         ScheduledAt: null,
@@ -31,22 +31,14 @@ public class CreateJobCommandValidatorTests
     [Fact]
     public void Missing_Type_FailsValidation()
     {
-        var command = ValidCommand() with { Type = string.Empty };
+        var command = ValidCommand() with { Type = (JobTypes)999 };
 
         var result = _validator.TestValidate(command);
 
         result.ShouldHaveValidationErrorFor(x => x.Type);
     }
 
-    [Fact]
-    public void Type_TooLong_FailsValidation()
-    {
-        var command = ValidCommand() with { Type = new string('a', 201) };
 
-        var result = _validator.TestValidate(command);
-
-        result.ShouldHaveValidationErrorFor(x => x.Type);
-    }
 
     [Fact]
     public void Invalid_Priority_FailsValidation()

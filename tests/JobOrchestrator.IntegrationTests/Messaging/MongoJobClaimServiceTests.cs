@@ -42,7 +42,7 @@ public class MongoJobClaimServiceTests : IAsyncLifetime
     {
         var now = DateTimeOffset.UtcNow;
         var job = Job.Create(
-            Guid.NewGuid(), Guid.NewGuid().ToString(), "demo-job", "{}",
+            Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}",
             Priority.Low, null, 3, Guid.NewGuid().ToString(), now);
         job.MarkQueued(now);
         await _jobRepository.AddAsync(job, CancellationToken.None);
@@ -63,7 +63,7 @@ public class MongoJobClaimServiceTests : IAsyncLifetime
     {
         var now = DateTimeOffset.UtcNow;
         var job = Job.Create(
-            Guid.NewGuid(), Guid.NewGuid().ToString(), "demo-job", "{}",
+            Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}",
             Priority.Low, null, 3, Guid.NewGuid().ToString(), now);
         // Left in Pending — never queued.
         await _jobRepository.AddAsync(job, CancellationToken.None);

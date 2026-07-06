@@ -13,8 +13,7 @@ public sealed class CreateJobCommandValidator : AbstractValidator<CreateJobComma
             .NotEmpty();
 
         RuleFor(x => x.Type)
-            .NotEmpty()
-            .MaximumLength(200);
+            .IsInEnum();
 
         RuleFor(x => x.Priority)
             .IsInEnum();

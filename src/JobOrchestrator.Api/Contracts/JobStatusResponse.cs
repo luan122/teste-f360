@@ -1,11 +1,12 @@
 using JobOrchestrator.Application.Features.Jobs;
+using JobOrchestrator.Domain.Jobs;
 
 namespace JobOrchestrator.Api.Contracts;
 
 /// <summary>Mirrors <c>JobStatusResponse</c> in contracts/openapi.yaml.</summary>
 public sealed record JobStatusResponse(
     Guid JobId,
-    string Type,
+    JobTypes Type,
     string Priority,
     string Status,
     DateTimeOffset? ScheduledAt,

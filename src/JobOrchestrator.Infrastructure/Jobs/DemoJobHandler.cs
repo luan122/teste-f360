@@ -8,7 +8,7 @@ namespace JobOrchestrator.Infrastructure.Jobs;
 /// <summary>Sample <see cref="IJobHandler"/> demonstrating end-to-end execution with cooperative cancellation. Registered for job type <c>demo-job</c>.</summary>
 public sealed class DemoJobHandler(ILogger<DemoJobHandler> logger) : IJobHandler
 {
-    public string JobType => "demo-job";
+    public JobTypes JobType => JobTypes.Demo;
 
     public async Task<string?> HandleAsync(Job job, CancellationToken cancellationToken)
     {

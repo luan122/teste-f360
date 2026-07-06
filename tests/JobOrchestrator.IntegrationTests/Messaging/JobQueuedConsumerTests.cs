@@ -79,7 +79,7 @@ public class JobQueuedConsumerTests : IAsyncLifetime
     {
         var now = DateTimeOffset.UtcNow;
         var job = Job.Create(
-            Guid.NewGuid(), Guid.NewGuid().ToString(), "demo-job", "{}",
+            Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}",
             Priority.Low, null, 3, Guid.NewGuid().ToString(), now);
         job.MarkQueued(now);
         job.StartProcessing(now);
@@ -103,7 +103,7 @@ public class JobQueuedConsumerTests : IAsyncLifetime
     {
         var now = DateTimeOffset.UtcNow;
         var job = Job.Create(
-            Guid.NewGuid(), Guid.NewGuid().ToString(), "demo-job", "{}",
+            Guid.NewGuid(), Guid.NewGuid().ToString(), JobTypes.Demo, "{}",
             Priority.High, null, 3, Guid.NewGuid().ToString(), now);
         job.MarkQueued(now);
         await _jobRepository.AddAsync(job, CancellationToken.None);
@@ -127,7 +127,7 @@ public class JobQueuedConsumerTests : IAsyncLifetime
 
         public int InvocationCount => _invocationCount;
 
-        public string JobType => "demo-job";
+        public JobTypes JobType => JobTypes.Demo;
 
         public Task<string?> HandleAsync(Job job, CancellationToken cancellationToken)
         {

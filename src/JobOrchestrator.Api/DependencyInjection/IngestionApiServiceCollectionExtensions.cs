@@ -92,6 +92,8 @@ public static class IngestionApiServiceCollectionExtensions
                 }
             });
 
+            options.SchemaFilter<EnumDescriptionSchemaFilter>();
+
             options.OperationFilter<IdempotencyKeyOperationFilter>();
 
             var xmlPath = Path.Combine(AppContext.BaseDirectory,
