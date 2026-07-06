@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text;
 using FluentValidation;
 using JobOrchestrator.Api.Auth;
+using JobOrchestrator.Api.Middleware;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -90,6 +91,8 @@ public static class IngestionApiServiceCollectionExtensions
                     Array.Empty<string>()
                 }
             });
+
+            options.OperationFilter<IdempotencyKeyOperationFilter>();
 
             var xmlPath = Path.Combine(AppContext.BaseDirectory,
                 $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
